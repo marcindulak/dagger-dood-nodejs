@@ -1,0 +1,46 @@
+name: scripted
+
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  scripted:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - run: id
+      - run: ls -l
+
+      - name: bring up dood
+        # Avoid: the input device is not a TTY
+        # https://github.com/actions/runner/issues/241#issuecomment-745902718
+        shell: 'script -q -e -c "bash {0}"'
+        run: |
+          set -eo pipefail
+          docker build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) -t dagger:latest .
+          docker run -d --rm --name dagger -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:/app dagger:latest sleep infinity
+          docker exec -it dagger sh -c "id"
+          docker exec -it dagger sh -c "ls -al"
+          docker exec -it dagger sh -c "sudo groupmod --non-unique -g \$(stat -c '%g' /var/run/docker.sock) docker"
+          docker exec -it dagger sh -c "docker run hello-world"
+          docker ps
+          free -h
+
+      - name: install dagger in dood
+        shell: 'script -q -e -c "bash {0}"'
+        run: |
+          set -eo pipefail
+          docker exec -it dagger sh -c "npm install ts-node"
+          docker exec -it dagger sh -c "npm install @types/node"
+          docker exec -it dagger sh -c "npm pkg set type=module"
+          docker exec -it dagger sh -c "echo '{\"compilerOptions\":{\"moduleResolution\":\"Node\",\"module\":\"ESNext\",\"target\":\"ES2020\"}}' > tsconfig.json"
+          docker exec -it dagger sh -c "npm install @dagger.io/dagger"
+
+      - name: call dagger from dood
+        shell: 'script -q -e -c "bash {0}"'
+        run: |
+          set -eo pipefail
+          docker exec -it dagger sh -c "node --loader ts-node/esm ./build.ts"
